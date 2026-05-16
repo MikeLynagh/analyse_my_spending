@@ -57,7 +57,18 @@ def ask():
         if 'history' not in session:
             session['history'] = [
                 {'role': 'system', 
-                 'content': f'Today is {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}. You are a helpful assistant. You have access to tools for web search. Think before responding.'}]
+                'content': """You are a helpful assistant with access to web search.
+
+        -IMPORTANT: For ANY query about:
+        - Current events, news, elections, politicians
+        - Recent information or updates  
+        - Real-time data or statistics
+        - "Who is", "What is happening", "Current"
+        - Location-based current information (like Galway by-election)
+
+        YOU MUST use the web_search tool to get accurate, up-to-date information.
+
+        Do not guess or provide old information - always search first for current topics."""}]
 
         # Check if user wants to remember something
         if 'remember' in user_input.lower():
@@ -67,7 +78,7 @@ def ask():
                 response = captureMemory(memory_text)
                 add_to_session_history('user', user_input)
                 add_to_session_history('assistant', response)
-                add_to_history(user_input, 'qwen2.5:3b', response)
+                add_to_history(user_input, 'qwen3.5:4b', response)
                 return jsonify({'response': response})
         
         memories = get_memories()
@@ -86,10 +97,12 @@ def ask():
 
         for i in range(3):
             response = chat(
-                model="qwen2.5:3b",
+                model="qwen3.5:4b",
                 messages=messages,
                 tools=TOOLS
             )
+
+            print(f"[Response] Tool calls found: {len(response.message.tool_calls) if response.message.tool_calls else 0}")
 
             messages.append(response.message)
             model_responses.append(response.message.content or '')
@@ -98,9 +111,11 @@ def ask():
                 for tool_call in response.message.tool_calls:
                     tool_name = tool_call.function.name
                     tool_args = tool_call.function.arguments
+                    print(f"[TOOL CALLED] {tool_name} with args: {tool_args}")
 
                     if tool_name in TOOL_FUNCTIONS:
                         result = TOOL_FUNCTIONS[tool_name](**tool_args)
+                        print(f"[TOOL RESULT] {result:[:300]}")
                         messages.append({
                             'role': 'tool',
                             'content': str(result)[:2000],
@@ -114,7 +129,7 @@ def ask():
         add_to_session_history('assistant', final_response)
         
         # Log to persistent history
-        add_to_history(user_input, 'qwen2.5:3b', final_response)
+        add_to_history(user_input, 'qwen3.5:4b', final_response)
         session.modified = True
 
         return jsonify({'response': final_response})
