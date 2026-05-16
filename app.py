@@ -58,12 +58,30 @@ def ask():
         if 'history' not in session:
             session['history'] = [{'role': 'system', 'content': f'Today is {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}! Always think before you answer.'}]
 
-        # If PDF is loaded, add it to the user's message for context
-        if 'pdf_content' in session:
-            user_input += f"\n\n[PDF Document Content]:\n{session['pdf_content']}"
+        # Check if user wants to remember something
+        if 'remember' in user_input.lower():
+            import re
+            match = re.search(r'remember\s+(.+?)(?:\.|$)', user_input, re.IGNORECASE)
+            if match:
+                memory_to_save = match.group(1).strip()
+                from add_tool import captureMemory
+                memory_response = captureMemory(memory_to_save)
+                add_to_session_history('user', user_input)
+                add_to_session_history('assistant', memory_response)
+                return jsonify({'response': memory_response})
         
-        add_to_session_history('user', user_input)
- 
+        # Add memories context to user message if they exist
+        from add_tool import getMemoriesContext
+        memories_context = getMemoriesContext()
+        message_with_context = user_input
+        if memories_context:
+            message_with_context = f"{memories_context}\n\nUser: {user_input}"
+        
+        # If PDF is loaded, add it to the message for context
+        if 'pdf_content' in session:
+            message_with_context += f"\n\n[PDF Document]:\n{session['pdf_content']}"
+        
+        add_to_session_history('user', message_with_context)
         
         payload = {
             'model': ollama_model,
@@ -99,6 +117,7 @@ def add_to_session_history(role, content):
         session['history'] = [{'role': 'system', 'content': f'Today is {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}! Give a fast response.'}]
     session['history'].append({'role': role, 'content': content})
     session.modified = True
+
 
 if __name__ == '__main__':
     app.run(debug=True)
