@@ -1,8 +1,7 @@
 from pypdf import PdfReader
 from config_manager import add_memory, get_memories
-import requests
-import re
-from ollama import chat
+from ddgs import DDGS
+import wikipediaapi
 
 def readPdf(file_path:str) -> str:
     """Reads a PDF file and returns the text content"""
@@ -11,31 +10,46 @@ def readPdf(file_path:str) -> str:
         text = ""
         for page_num, page in enumerate(reader.pages):
             text += f"\n--- Page {page_num + 1} ---\n"
-            text += page.extract_text()
+            text += page.extract_text() or ""
         return text
     except Exception as e:
         return f"Error reading PDF: {str(e)}"
     
 def web_search(query: str) -> str:
-    """Search the web using DuckDuckGo (no api needed)"""
+    """Search the web and return a summary of top results."""
     try:
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
-        url = f"https://api.duckduckgo.com/?q={query}&format=json"
-        response = requests.get(url, headers=headers, timeout=10)
-        data = response.json()
+        with DDGS() as ddgs:
+            results = list(ddgs.text(query, max_results=3))
 
-        result = f"Search: '{query}'\n"
-        if data.get('AbstractText'):
-            result += f"Summary: {data['AbstractText']}\n"
-        if data.get('RelatedTopics'):
-            result += "Topics:\n"
-            for i, topic in enumerate(data['RelatedTopics'][:3], 1):
-                if topic.get('Text'):
-                    result += f"{i}. {topic['Text']}\n"
+        if not results:
+            return f"No results found for: {query}"
 
-        return result if len(result) > 30 else 'No results found'
+        parts = []
+        for i, result in enumerate(results, 1):
+            parts.append(
+                f"[{i}] {result.get('title', 'No title')}\n"
+                f"    {result.get('body', 'No summary')}\n"
+                f"    Source: {result.get('href', 'No URL')}"
+            )
+
+        return "\n\n".join(parts)
     except Exception as e:
         return f"Search error: {str(e)}"
+
+
+def wikipedia_lookup(topic: str) -> str:
+    """Fetch the summary of a Wikipedia article."""
+    try:
+        wiki = wikipediaapi.Wikipedia(
+            user_agent="AgentLab/1.0 (educational)",
+            language="en"
+        )
+        page = wiki.page(topic)
+        if not page.exists():
+            return f"Wikipedia article not found for: {topic}"
+        return f"Wikipedia - {page.title}:\n{page.summary[:1500]}"
+    except Exception as e:
+        return f"Wikipedia error: {str(e)}"
 
 TOOLS = [
    {
@@ -49,16 +63,38 @@ TOOLS = [
                     'query': {
                         'type': 'string',
                         'description': 'The search query'
+                    },
+                    'max_results': {
+                        'type': 'integer',
+                        'description': 'Maximum number of results to return'
                     }
                 },
                 'required': ['query']
+            }
+        }
+    },
+    {
+        'type': 'function',
+        'function': {
+            'name': 'wikipedia_lookup',
+            'description': 'Look up a topic on Wikipedia and return a summary',
+            'parameters': {
+                'type': 'object',
+                'properties': {
+                    'topic': {
+                        'type': 'string',
+                        'description': 'The Wikipedia article title to look up'
+                    }
+                },
+                'required': ['topic']
             }
         }
     }
 ]
 
 TOOL_FUNCTIONS = {
-    'web_search': web_search
+    'web_search': web_search,
+    'wikipedia_lookup': wikipedia_lookup
 }
 
 
@@ -80,7 +116,3 @@ def getMemoriesContext():
     if memories:
         return "User's memories:\n" + "\n".join([f"- {m}" for m in memories])
     return ""
-       
-
-
-
