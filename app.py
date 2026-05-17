@@ -4,7 +4,7 @@ import datetime
 import os
 from werkzeug.utils import secure_filename
 from add_tool import readPdf, captureMemory, getMemoriesContext, TOOLS, TOOL_FUNCTIONS
-from config_manager import init_config, add_to_history, add_memory, get_memories, update_summary
+from config_manager import init_config, add_to_history, get_memories, append_summary
 from ollama import chat
 import re
 
@@ -79,6 +79,7 @@ def ask():
                 add_to_session_history('user', user_input)
                 add_to_session_history('assistant', response)
                 add_to_history(user_input, 'qwen3.5:4b', response)
+                append_summary(user_input, response)
                 return jsonify({'response': response})
         
         memories = get_memories()
@@ -86,6 +87,10 @@ def ask():
         if memories:
             memories_text = "User's memories:\n" + "\n".join([f"- {m}" for m in memories])
             message = f"{memories_text}\n\nUser: {user_input}"
+
+        if 'do a web search' in user_input.lower():
+            search_result = TOOL_FUNCTIONS['web_search'](query=user_input)
+            message += f"\n\n[Web Search Results]:\n{search_result}"
         
         if 'pdf_content' in session:
             message += f"\n\n[PDF Document]:\n{session['pdf_content']}"
@@ -115,7 +120,7 @@ def ask():
 
                     if tool_name in TOOL_FUNCTIONS:
                         result = TOOL_FUNCTIONS[tool_name](**tool_args)
-                        print(f"[TOOL RESULT] {result:[:300]}")
+                        print(f"[TOOL RESULT] {str(result)[:300]}")
                         messages.append({
                             'role': 'tool',
                             'content': str(result)[:2000],
@@ -130,6 +135,7 @@ def ask():
         
         # Log to persistent history
         add_to_history(user_input, 'qwen3.5:4b', final_response)
+        append_summary(user_input, final_response)
         session.modified = True
 
         return jsonify({'response': final_response})
