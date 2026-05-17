@@ -110,3 +110,17 @@ def update_summary(summary_text):
             save_user_config(config)
     except Exception as e:
         print(f"Error updating summary: {e}")
+
+
+def append_summary(prompt, reply, max_length=1200):
+    """Append a short rolling conversation summary to user config."""
+    try:
+        config = load_user_config()
+        if config:
+            entry = f"User: {prompt} | Assistant: {reply}"
+            current = config.get('summary', '')
+            combined = entry if not current or current == "Conversation started" else f"{current}\n{entry}"
+            config['summary'] = combined[-max_length:]
+            save_user_config(config)
+    except Exception as e:
+        print(f"Error appending summary: {e}")
